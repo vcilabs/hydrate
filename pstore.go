@@ -201,6 +201,28 @@ func (ps *paramStore) hydrateMapRecursively(data map[string]interface{}, path []
 				return err
 			}
 
+		// Support YAML sequences (arrays). Recurse into each element that is a map
+		// so that $SECRET: values nested inside array items (e.g. additional_users[].password)
+		// are resolved the same way as top-level map values.
+		case []interface{}:
+			for i, item := range v {
+				switch elem := item.(type) {
+				case map[string]interface{}:
+					if err := ps.hydrateMapRecursively(elem, append(path, key)); err != nil {
+						return err
+					}
+				case map[interface{}]interface{}:
+					ee := map[string]interface{}{}
+					for k, val := range elem {
+						ee[k.(string)] = val
+					}
+					v[i] = ee
+					if err := ps.hydrateMapRecursively(ee, append(path, key)); err != nil {
+						return err
+					}
+				}
+			}
+
 		}
 	}
 	return nil
