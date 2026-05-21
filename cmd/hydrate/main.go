@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"github.com/pkg/errors"
-	"github.com/pressly/hydrate"
+	"github.com/vcilabs/hydrate"
 )
 
 var (
