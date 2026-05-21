@@ -201,6 +201,50 @@ func (ps *paramStore) hydrateMapRecursively(data map[string]interface{}, path []
 				return err
 			}
 
+		// Support YAML sequences (arrays). Recurse into each element, resolving
+		// $SECRET:<path> tokens in string items and descending into map items so
+		// that $SECRET: values nested inside array structures (e.g.
+		// additional_users[].password) are resolved the same way as top-level
+		// map values.
+		case []interface{}:
+			for i, item := range v {
+				itemPath := fmt.Sprintf("%s[%d]", key, i)
+				switch elem := item.(type) {
+				case string:
+					// Only the explicit $SECRET:<path> form is meaningful for bare
+					// array elements; $$ and $SECRET derive their SSM path from
+					// the sibling key, which array items don't have.
+					if strings.HasPrefix(elem, "$SECRET:") {
+						secret, err := ps.hydrateKeyValue(itemPath, elem)
+						if err != nil {
+							return errors.Wrapf(err, "failed to hydrate %q",
+								strings.Join(append(path, itemPath), "."))
+						}
+						if secret != nil {
+							v[i] = *secret
+						}
+					}
+				case map[string]interface{}:
+					if err := ps.hydrateMapRecursively(elem, append(path, itemPath)); err != nil {
+						return err
+					}
+				case map[interface{}]interface{}:
+					ee := make(map[string]interface{}, len(elem))
+					for k, val := range elem {
+						ks, ok := k.(string)
+						if !ok {
+							return errors.Errorf("non-string YAML key %v at %s",
+								k, strings.Join(append(path, itemPath), "."))
+						}
+						ee[ks] = val
+					}
+					v[i] = ee
+					if err := ps.hydrateMapRecursively(ee, append(path, itemPath)); err != nil {
+						return err
+					}
+				}
+			}
+
 		}
 	}
 	return nil
